@@ -54,6 +54,18 @@ class GFKlaviyoAPI extends GFFeedAddOn {
 
 		}
 
+        // Retrieve the custom name => value pairs for all fields mapped in the 'customFields' dynamic field map.
+		$field_map_custom = $this->get_dynamic_field_map_fields( $feed, 'customFields' );
+
+        // Loop through the custom fields from the dynamic field map setting building an array of values to be passed to the third-party service.
+		$merge_vars_custom = array();
+		foreach ( $field_map_custom as $name => $field_id ) {
+
+			// Get the field value for the specified field id
+			$merge_vars_custom[ $name ] = $this->get_field_value( $form, $entry, $field_id );
+
+		}
+
 		// Send a custom event to show the form was interacted with 
         if ($this->get_plugin_setting('api_key')) {
             $tracker = new Klaviyo($this->get_plugin_setting('api_key'));
@@ -85,6 +97,12 @@ class GFKlaviyoAPI extends GFFeedAddOn {
 
 			if(isset($merge_vars['last_name']))
 				$post_data['profiles'][0]['$last_name'] = $merge_vars['last_name'];
+            
+            if(!empty($merge_vars_custom)){
+                foreach($merge_vars_custom as $custom_field_key => $custom_field_val){
+                    $post_data['profiles'][0][$custom_field_key] = $custom_field_val;
+                }
+            }
 
         	$response = wp_safe_remote_post($url, array(
 				'method' => 'POST',
@@ -104,6 +122,32 @@ class GFKlaviyoAPI extends GFFeedAddOn {
 			}
         }
 	}
+
+    /**
+	 * Process the list field value to comply with Klaviyo
+     */
+    public function get_list_field_value( $entry, $field_id, $field ) {
+        $field_value = rgar( $entry, $field_id );
+        if(!empty($field_value)){
+            $field_value = json_encode(unserialize($entry[$field_id]));
+        }
+        return $field_value;
+    }
+
+    /**
+	 * Process the list field value to format to ["item one","item two"] comply with Klaviyo
+     */
+    public function get_checkbox_field_value( $entry, $field_id, $field ) {
+        $field_value = rgar( $entry, $field_id );
+        $chosen_arr = [];
+
+        foreach($entry as $key => $value){
+            if(substr( $key, 0, 2 ) === $field_id."." && $value != ""){
+                array_push($chosen_arr, $value);
+            }
+        }
+        return json_encode($chosen_arr);
+    }
 
 	// # ADMIN FUNCTIONS -----------------------------------------------------------------------------------------------
 
@@ -181,15 +225,33 @@ class GFKlaviyoAPI extends GFFeedAddOn {
                             ),
 						),
 					),
-					array(
+				),
+			),
+            array(
+                'title'  => esc_html__( 'Custom Fields', 'klaviyoaddon' ),
+                'fields' => array(
+                    array(
+                        'name'                => 'customFields',
+                        'label'               => esc_html__( 'Custom Fields', 'klaviyoaddon' ),
+                        'type'                => 'dynamic_field_map',
+                        'limit'               => 20,
+                        'exclude_field_types' => 'creditcard',
+                        'tooltip'             => '<h6>' . esc_html__( 'Custom Fields', 'klaviyoaddon' ) . '</h6>' . esc_html__( 'You may send custom information. A maximum of 20 custom keys may be sent. The key name must be 40 characters or less, and the mapped data will be truncated to 500 characters. ', 'klaviyoaddon' ),
+                        'validation_callback' => array( $this, 'validate_custom_meta' ),
+                    ),
+                ),
+            ),
+            array(
+                'title'  => esc_html__( 'Conditions', 'klaviyoaddon' ),
+                'fields' => array(
+                    array(
 						'name'           => 'condition',
-						'label'          => esc_html__( 'Condition', 'klaviyoaddon' ),
 						'type'           => 'feed_condition',
 						'checkbox_label' => esc_html__( 'Enable Condition', 'klaviyoaddon' ),
 						'instructions'   => esc_html__( 'Process this feed if', 'klaviyoaddon' ),
 					),
-				),
-			),
+                ),
+            ),
 		);
 	}
 
